@@ -1,0 +1,43 @@
+name: arm-kvm-race
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage0:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe ARM KVM
+        run: |
+          uname -m
+          ls -l /dev/kvm || true
+          if [ ! -e /dev/kvm ]; then
+            echo "NO_ARM_KVM: hosted runner has no /dev/kvm"
+            exit 78
+          fi
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm
+
+      - name: Run 6-core stage 0
+        run: |
+          chmod +x exploit5-qemu
+          timeout 300 qemu-system-aarch64 -accel kvm -cpu host -M virt -m 4096 -smp 6 \
+            -kernel Image -initrd initrd.gz \
+            -append "console=ttyAMA0 rdinit=/init printk.time=1 loglevel=7" \
+            -nographic -no-reboot 2>&1 | tee run.log
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-log
+          path: run.log
+          if-no-files-found: ignore
